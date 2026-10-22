@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Artwork;
 use App\Models\ArtworkImage;
+use App\Support\ImageFingerprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
@@ -26,29 +27,33 @@ class ArtworkController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $this->withDefaults($this->validated($request), true);
-        $validated['slug'] = $this->uniqueSlug($validated['slug'] ?? $validated['title']);
-        $artwork = Artwork::create($validated);
-        if (array_key_exists('year', $validated)) {
-            $artwork->year = $validated['year'];
-            $artwork->save();
-        }
-        $this->attachUploadedImages($request, $artwork);
-        return response()->json($artwork->load('images'), 201);
+        return DB::transaction(function () use ($request) {
+            $validated = $this->withDefaults($this->validated($request), true);
+            $validated['slug'] = $this->uniqueSlug($validated['slug'] ?? $validated['title']);
+            $artwork = Artwork::create($validated);
+            if (array_key_exists('year', $validated)) {
+                $artwork->year = $validated['year'];
+                $artwork->save();
+            }
+            $this->attachUploadedImages($request, $artwork);
+            return response()->json($artwork->load('images'), 201);
+        });
     }
 
     public function update(Request $request, $id)
     {
-        $artwork = Artwork::findOrFail($id);
-        $validated = $this->withDefaults($this->validated($request, $id), false);
-        $validated['slug'] = $this->uniqueSlug($validated['slug'] ?? $validated['title'], $id);
-        $artwork->update($validated);
-        if (array_key_exists('year', $validated)) {
-            $artwork->year = $validated['year'];
-            $artwork->save();
-        }
-        $this->attachUploadedImages($request, $artwork);
-        return response()->json($artwork->load('images'));
+        return DB::transaction(function () use ($request, $id) {
+            $artwork = Artwork::findOrFail($id);
+            $validated = $this->withDefaults($this->validated($request, $id), false);
+            $validated['slug'] = $this->uniqueSlug($validated['slug'] ?? $validated['title'], $id);
+            $artwork->update($validated);
+            if (array_key_exists('year', $validated)) {
+                $artwork->year = $validated['year'];
+                $artwork->save();
+            }
+            $this->attachUploadedImages($request, $artwork);
+            return response()->json($artwork->load('images'));
+        });
     }
 
     public function destroy($id)
@@ -124,6 +129,7 @@ class ArtworkController extends Controller
             'images.*' => 'image|mimes:jpeg,jpg,png,webp|max:10240',
             'image_data' => 'nullable|array',
             'image_data.*' => 'string|max:15000000',
+            'replace_duplicates' => 'sometimes|boolean',
             'image_urls' => 'nullable|array',
             'image_urls.*' => 'required|url|max:2048',
             'image_url' => 'nullable|url|max:2048',
@@ -172,15 +178,15 @@ class ArtworkController extends Controller
 
     private function attachUploadedImages(Request $request, Artwork $artwork): void
     {
+        $replaceDuplicates = $request->boolean('replace_duplicates');
         $nextOrder = $artwork->images()->max('sort_order') + 1;
         foreach ($request->file('images', []) as $file) {
+            $contents = $file->get();
+            $hash = $this->fingerprint($contents);
+            $duplicates = $this->findDuplicateImages($artwork, $hash, $replaceDuplicates);
             $path = 'artworks/' . Str::uuid() . '.' . $file->extension();
-            $publicUrl = $this->storePublicImage($path, $file->get(), $file->getMimeType());
-            ArtworkImage::create([
-                'artwork_id' => $artwork->id,
-                'path' => $publicUrl,
-                'sort_order' => $nextOrder++,
-            ]);
+            $publicUrl = $this->storePublicImage($path, $contents, $file->getMimeType());
+            $this->saveImage($artwork, $publicUrl, $hash, $duplicates, $nextOrder);
         }
 
         foreach ($request->input('image_data', []) as $dataUrl) {
@@ -194,13 +200,11 @@ class ArtworkController extends Controller
             }
 
             $extension = $matches[1] === 'image/jpeg' ? 'jpg' : substr($matches[1], 6);
+            $hash = $this->fingerprint($contents);
+            $duplicates = $this->findDuplicateImages($artwork, $hash, $replaceDuplicates);
             $path = 'artworks/' . Str::uuid() . '.' . $extension;
             $publicUrl = $this->storePublicImage($path, $contents, $matches[1]);
-            ArtworkImage::create([
-                'artwork_id' => $artwork->id,
-                'path' => $publicUrl,
-                'sort_order' => $nextOrder++,
-            ]);
+            $this->saveImage($artwork, $publicUrl, $hash, $duplicates, $nextOrder);
         }
 
         foreach ($request->input('image_urls', []) as $url) {
@@ -245,5 +249,53 @@ class ArtworkController extends Controller
         }
 
         return "{$baseUrl}/storage/v1/object/public/{$bucket}/{$path}";
+    }
+
+    private function fingerprint(string $contents): string
+    {
+        $fingerprint = ImageFingerprint::fromBytes($contents);
+        if ($fingerprint === null) {
+            throw ValidationException::withMessages([
+                'image_data' => 'The uploaded image could not be fingerprinted. Try another JPEG, PNG, or WebP image.',
+            ]);
+        }
+
+        return $fingerprint;
+    }
+
+    private function findDuplicateImages(Artwork $artwork, string $fingerprint, bool $replaceDuplicates)
+    {
+        $matches = ArtworkImage::with('artwork:id,title')->whereHas('artwork')->whereNotNull('hash')->get()
+            ->filter(fn (ArtworkImage $image) => ImageFingerprint::distance($fingerprint, $image->hash) <= 4);
+
+        $otherArtwork = $matches->first(fn (ArtworkImage $image) => (int) $image->artwork_id !== (int) $artwork->id);
+        if ($otherArtwork) {
+            $otherTitle = $otherArtwork->artwork?->title ?? 'Untitled artwork';
+            throw ValidationException::withMessages([
+                'image_data' => "Duplicate image belongs to artwork #{$otherArtwork->artwork_id}:{$otherTitle}",
+            ]);
+        }
+
+        if ($matches->isNotEmpty() && !$replaceDuplicates) {
+            throw ValidationException::withMessages([
+                'image_data' => 'Duplicate image detected for this artwork. Confirm replacement to overwrite it.',
+            ]);
+        }
+
+        return $matches;
+    }
+
+    private function saveImage(Artwork $artwork, string $publicUrl, string $hash, $duplicates, int &$nextOrder): void
+    {
+        foreach ($duplicates as $duplicate) {
+            $duplicate->delete();
+        }
+
+        ArtworkImage::create([
+            'artwork_id' => $artwork->id,
+            'path' => $publicUrl,
+            'sort_order' => $nextOrder++,
+            'hash' => $hash,
+        ]);
     }
 }

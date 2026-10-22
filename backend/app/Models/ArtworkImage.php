@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ArtworkImage extends Model
 {
-    protected $fillable = ['artwork_id', 'path', 'sort_order'];
+    protected $fillable = ['artwork_id', 'path', 'sort_order', 'hash'];
 
     public function getPathAttribute($value): ?string
     {
