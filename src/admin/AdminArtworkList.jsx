@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { adminFetch } from './api'
 import { formatPrice } from '../utils/formatPrice'
-import { artworkStatusLabel } from '../components/artwork/ArtworkCard'
+import { artworkStatusClass, artworkStatusLabel } from '../components/artwork/ArtworkCard'
+import { matchesSearch } from '../components/gallery/CatalogueFilters'
 
 function retryImage(event) {
   const image = event.currentTarget
@@ -23,6 +24,7 @@ export default function AdminArtworkList() {
   const [artworks, setArtworks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [search, setSearch] = useState('')
   const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
   useEffect(() => {
@@ -49,19 +51,38 @@ export default function AdminArtworkList() {
   if (loading) return <p>Loading artworks...</p>
   if (error) return <p>{error}</p>
 
+  const visibleArtworks = artworks.filter((artwork) => matchesSearch(artwork, search))
+
   return (
     <section className="max-w-6xl">
       <div className="flex flex-col justify-between gap-4 border-b border-neutral-200 pb-6 sm:flex-row sm:items-end">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-500">Admin / Catalogue</p>
           <h1 className="mt-3 font-display text-4xl font-semibold text-ink">Catalogue</h1>
-          <p className="mt-2 text-neutral-600">{artworks.length} artworks in your collection.</p>
+          <p className="mt-2 text-neutral-600">
+            {search.trim() ? `${visibleArtworks.length} of ${artworks.length} artworks match.` : `${artworks.length} artworks in your collection.`}
+          </p>
         </div>
         <Link to="/admin/catalogue/new" className="w-fit rounded-full bg-ink px-5 py-3 text-sm font-medium text-white">New artwork</Link>
       </div>
 
+      <label className="mt-6 block max-w-md text-sm text-neutral-700">
+        Search artworks
+        <input
+          type="search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search by title, medium, size or year"
+          className="mt-2 block w-full rounded border border-neutral-300 bg-white px-3 py-2"
+        />
+      </label>
+
+      {visibleArtworks.length === 0 && (
+        <p className="mt-8 text-neutral-600">No artworks match your search.</p>
+      )}
+
       <div className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-        {artworks.map((artwork) => {
+        {visibleArtworks.map((artwork) => {
           const thumbnail = artwork.images?.[0]?.path
           return (
             <article key={artwork.id} className="overflow-hidden rounded-2xl border border-neutral-200 bg-white">
@@ -73,7 +94,7 @@ export default function AdminArtworkList() {
                     onError={retryImage}
                     loading="lazy"
                     decoding="async"
-                    className="aspect-[4/3] w-full object-cover"
+                    className="aspect-[4/3] w-full bg-neutral-50 object-contain p-2"
                   />
                   <div className="hidden aspect-[4/3] items-center justify-center bg-neutral-100 text-sm text-neutral-400">Image unavailable</div>
                 </>
@@ -86,7 +107,7 @@ export default function AdminArtworkList() {
                     <h2 className="truncate font-display text-lg font-semibold text-ink">{artwork.title}</h2>
                     <p className="mt-1 text-xs text-neutral-500">{[artwork.medium, artwork.dimensions !== 'Dimensions on request' && artwork.dimensions, artwork.year].filter(Boolean).join(' · ')}</p>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${artwork.status === 'exhibition' ? 'bg-amber-50 text-amber-700' : artwork.available ? 'bg-emerald-50 text-emerald-700' : 'bg-neutral-100 text-neutral-500'}`}>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${artworkStatusClass(artwork)}`}>
                     {artworkStatusLabel(artwork)}
                   </span>
                 </div>

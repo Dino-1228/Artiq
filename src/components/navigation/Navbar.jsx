@@ -54,8 +54,8 @@ export default function Navbar() {
         aria-label="Primary"
         className="glass flex w-full max-w-3xl items-center justify-between rounded-full px-4 py-2.5 sm:px-6"
       >
-        <NavLink to="/" className="font-display text-base font-semibold tracking-tight text-zinc-950 sm:text-lg">
-          {site.artistName}
+        <NavLink to="/" className="max-w-[11rem] truncate font-display text-sm font-semibold tracking-tight text-zinc-950 sm:max-w-none sm:text-lg">
+          {site.brandName}
         </NavLink>
 
         <div className="hidden items-center gap-1 md:flex">

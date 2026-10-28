@@ -28,7 +28,7 @@ export default function MobileMenu({ open, onClose }) {
       }`}
     >
       <div className="flex items-center justify-between px-6 pt-6">
-        <span className="font-display text-lg font-semibold text-zinc-950">{site.artistName}</span>
+        <span className="font-display text-lg font-semibold text-zinc-950">{site.brandName}</span>
         <CloseButton onClose={onClose} />
       </div>
 

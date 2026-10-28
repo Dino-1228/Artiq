@@ -30,7 +30,7 @@ export default function Footer() {
         <div className="grid grid-cols-1 gap-12 md:grid-cols-[1.4fr_1fr_1fr]">
           <div>
             <h3 className="footer-name select-none font-display text-6xl font-semibold tracking-tight text-zinc-950 transition-transform duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] hover:-skew-x-2 hover:scale-[1.02] sm:text-7xl">
-              {site.artistName}
+              {site.brandName}
             </h3>
             <p className="mt-4 max-w-sm text-zinc-600">{site.tagline}</p>
             <div className="mt-6 flex items-center gap-3">

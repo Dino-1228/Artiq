@@ -2,6 +2,7 @@
 // dennisliew.art. The artist's pronouns aren't stated there, so copy stays in
 // the first person ("I", "my") or uses the name — never "he/she".
 export const site = {
+  brandName: 'Dennis Liew House of Art',
   artistName: 'Dennis Liew',
   shortName: 'Dennis',
   tagline: 'Sharing my journey as an artist.',

@@ -26,27 +26,49 @@ function normalizeArtwork(artwork) {
 }
 
 export function useArtworks({ featured = false } = {}) {
-  const [remoteArtworks, setRemoteArtworks] = useState(null)
+  const [remoteArtworks, setRemoteArtworks] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [requestVersion, setRequestVersion] = useState(0)
 
   useEffect(() => {
     let active = true
+    let retryTimer
     const query = featured ? '?featured=1' : ''
 
-    apiGet(`/artworks${query}`)
-      .then((data) => {
-        if (active) setRemoteArtworks(data.map(normalizeArtwork))
-      })
-      .catch(() => {
-        if (active) setRemoteArtworks(null)
-      })
+    setLoading(true)
+    setError(null)
+
+    async function load(attempt = 0) {
+      try {
+        const data = await apiGet(`/artworks${query}`)
+        if (!Array.isArray(data)) throw new Error('Invalid artwork response')
+        if (!active) return
+        setRemoteArtworks(data.map(normalizeArtwork))
+        setLoading(false)
+      } catch (loadError) {
+        if (!active) return
+        if (attempt < 2) {
+          retryTimer = setTimeout(() => load(attempt + 1), 1500 * (attempt + 1))
+          return
+        }
+        setError(loadError)
+        setLoading(false)
+      }
+    }
+
+    load()
 
     return () => {
       active = false
+      clearTimeout(retryTimer)
     }
-  }, [featured])
+  }, [featured, requestVersion])
 
-  const localFallback = featured ? fallbackArtworks.slice(0, 6) : fallbackArtworks
-  const artworks = remoteArtworks ?? localFallback
-
-  return { artworks, loading: false, error: null }
+  return {
+    artworks: remoteArtworks,
+    loading,
+    error,
+    retry: () => setRequestVersion((version) => version + 1),
+  }
 }

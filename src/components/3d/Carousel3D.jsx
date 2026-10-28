@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight } from 'lucide-react'
 import gsap from 'gsap'
 import Button from '../buttons/Button'
 import { useReducedMotion } from '../../hooks/useReducedMotion'
-import { artworkMeta, artworkPrice, artworkStatusLabel } from '../artwork/ArtworkCard'
+import { artworkMeta, artworkPrice, artworkStatusClass, artworkStatusLabel } from '../artwork/ArtworkCard'
 
 const VISIBLE_RANGE = 3 // items further than this from center are hidden for performance
 
@@ -115,11 +115,11 @@ export default function Carousel3D({ artworks }) {
     return (
       <div className="mx-auto max-w-xl text-center">
         <div className="block overflow-hidden rounded-2xl bg-neutral-100">
-          <img src={art.image} alt={art.alt} className="aspect-[4/5] w-full object-cover" />
+          <CarouselArtworkImage artwork={art} />
         </div>
         <p className="mt-4 font-display text-lg font-medium text-zinc-950">{art.title}</p>
         <p className="text-sm text-zinc-500">{artworkMeta(art)}</p>
-        <p className="mt-1 text-sm font-medium text-zinc-700">{artworkStatusLabel(art)}</p>
+        <p className="mt-1"><span className={`inline-block rounded-full px-2.5 py-0.5 text-sm font-medium ${artworkStatusClass(art)}`}>{artworkStatusLabel(art)}</span></p>
         {artworkStatusLabel(art) !== 'Sold' && <p className="text-sm font-medium text-zinc-950">{artworkPrice(art)}</p>}
         <CarouselControls onPrev={prev} onNext={next} index={activeIndex} total={n} />
       </div>
@@ -169,7 +169,7 @@ export default function Carousel3D({ artworks }) {
                 pointerEvents: absDelta === 0 ? 'auto' : 'none',
               }}
             >
-                {art.image ? <img src={art.image} alt={art.alt} loading={absDelta <= 1 ? 'eager' : 'lazy'} className="aspect-[4/5] w-full object-cover" draggable={false} /> : <div className="flex aspect-[4/5] items-center justify-center text-sm text-neutral-500">Image not provided</div>}
+                {art.image ? <CarouselArtworkImage artwork={art} loading={absDelta <= 1 ? 'eager' : 'lazy'} draggable={false} /> : <div className="flex aspect-[4/5] items-center justify-center text-sm text-neutral-500">Image not provided</div>}
             </div>
           )
         })}
@@ -178,12 +178,27 @@ export default function Carousel3D({ artworks }) {
       <div className="mt-6 text-center">
         <p className="font-display text-lg font-medium text-zinc-950">{artworks[activeIndex].title}</p>
         <p className="text-sm text-zinc-500">{artworkMeta(artworks[activeIndex])}</p>
-        <p className="mt-1 text-sm font-medium text-zinc-700">{artworkStatusLabel(artworks[activeIndex])}</p>
+        <p className="mt-1"><span className={`inline-block rounded-full px-2.5 py-0.5 text-sm font-medium ${artworkStatusClass(artworks[activeIndex])}`}>{artworkStatusLabel(artworks[activeIndex])}</span></p>
         {artworkStatusLabel(artworks[activeIndex]) !== 'Sold' && <p className="text-sm font-medium text-zinc-950">{artworkPrice(artworks[activeIndex])}</p>}
       </div>
 
       <CarouselControls onPrev={prev} onNext={next} index={activeIndex} total={n} />
     </div>
+  )
+}
+
+function CarouselArtworkImage({ artwork, loading = 'lazy', draggable }) {
+  const [portraitImage, setPortraitImage] = useState(artwork.aspect === 'portrait')
+
+  return (
+    <img
+      src={artwork.image}
+      alt={artwork.alt}
+      loading={loading}
+      onLoad={(event) => setPortraitImage(event.currentTarget.naturalHeight > event.currentTarget.naturalWidth)}
+      className={`aspect-[4/5] w-full ${portraitImage ? 'object-contain bg-neutral-50 p-2' : 'object-cover'}`}
+      draggable={draggable}
+    />
   )
 }
 

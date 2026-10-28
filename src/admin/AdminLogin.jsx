@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { login } from './api'
 import { useAdminAuth } from './AdminAuthContext'
+import { site } from '../data/site'
 
 export default function AdminLogin() {
   const [email, setEmail] = useState('')
@@ -32,7 +33,7 @@ export default function AdminLogin() {
   return (
     <main className="mx-auto mt-32 max-w-sm px-6">
       <form onSubmit={handleSubmit}>
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-500">Kirtanraw Gallery</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-500">{site.brandName}</p>
         <h1 className="mt-4 font-display text-3xl font-semibold text-ink">Admin sign in</h1>
         {error && <p className="mt-3 text-sm text-red-600" role="alert">{error}</p>}
         <label className="mt-8 block text-sm text-neutral-700">

@@ -35,7 +35,7 @@ const FIELD_HELP = {
   materials: 'One material per line.',
   tags: 'One keyword per line to help organise related artworks.',
   available: 'Turn off when the artwork is sold or unavailable for orders.',
-  status: 'On sale adds the artwork to the cart. On show/exhibition purpose keeps it visible without selling it. Sold marks it unavailable.',
+  status: 'For sale adds the artwork to the cart. On show/exhibition purpose keeps it visible without selling it. Sold marks it unavailable.',
   featured: 'Show this artwork in the featured selection on the home page.',
   images: 'Add one or more clear JPEG, PNG, or WebP images. The first image becomes the main image.',
 }
@@ -57,6 +57,8 @@ function categoryKey(label) {
   return label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
 }
 
+const MAX_IMAGE_EDGE = 2000
+
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -64,6 +66,30 @@ function readFileAsDataUrl(file) {
     reader.onerror = () => reject(new Error(`Could not read ${file.name}.`))
     reader.readAsDataURL(file)
   })
+}
+
+// Large photos exceed the server's request limit, so downscale to JPEG first.
+async function prepareImage(file) {
+  const dataUrl = await readFileAsDataUrl(file)
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const image = new Image()
+      image.onload = () => resolve(image)
+      image.onerror = reject
+      image.src = dataUrl
+    })
+    const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(img.width, img.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(img.width * scale)
+    canvas.height = Math.round(img.height * scale)
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#fff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL('image/jpeg', 0.88)
+  } catch {
+    return dataUrl
+  }
 }
 
 function normalizeArtwork(artwork) {
@@ -135,31 +161,51 @@ export default function AdminArtworkForm() {
     event.preventDefault()
     setSaving(true)
     setError('')
-    const formData = new FormData()
+    const submitArtwork = async (replaceDuplicates = false) => {
+      const formData = new FormData()
 
-    Object.entries(form).forEach(([field, value]) => {
-      if (field === 'images') return
-      if (ARRAY_FIELDS.includes(field)) value.forEach((item) => formData.append(`${field}[]`, item))
-      else if (field === 'available' || field === 'featured') formData.append(field, value ? '1' : '0')
-      else if (value !== '' && value !== null && value !== undefined) formData.append(field, value)
-    })
-    try {
-      const imageData = await Promise.all(files.map(readFileAsDataUrl))
+      Object.entries(form).forEach(([field, value]) => {
+        if (field === 'images') return
+        if (ARRAY_FIELDS.includes(field)) value.forEach((item) => formData.append(`${field}[]`, item))
+        else if (field === 'available' || field === 'featured') formData.append(field, value ? '1' : '0')
+        else if (value !== '' && value !== null && value !== undefined) formData.append(field, value)
+      })
+
+      if (replaceDuplicates) formData.append('replace_duplicates', '1')
+
+      const imageData = await Promise.all(files.map(prepareImage))
       imageData.forEach((dataUrl) => formData.append('image_data[]', dataUrl))
-    } catch (fileError) {
-      setError(fileError.message)
-      setSaving(false)
-      return
+
+      if (id) {
+        formData.append('_method', 'PUT')
+        return adminFetch(`/artworks/${id}`, { method: 'POST', body: formData })
+      }
+
+      return adminFetch('/artworks', { method: 'POST', body: formData })
     }
 
     try {
       let savedArtwork
-      if (id) {
-        formData.append('_method', 'PUT')
-        savedArtwork = await adminFetch(`/artworks/${id}`, { method: 'POST', body: formData })
-      } else {
-        savedArtwork = await adminFetch('/artworks', { method: 'POST', body: formData })
+      try {
+        savedArtwork = await submitArtwork(false)
+      } catch (submitError) {
+        const duplicateMessage = submitError.message || ''
+        const duplicateArtwork = duplicateMessage.match(/Duplicate image belongs to artwork #(\d+):(.+)/)
+        if (duplicateArtwork) {
+          if (window.confirm(`This image already belongs to "${duplicateArtwork[2]}". Open that artwork instead?`)) {
+            navigate(`/admin/catalogue/${duplicateArtwork[1]}`)
+            return
+          }
+          throw submitError
+        }
+
+        if (duplicateMessage.includes('Duplicate image detected') && window.confirm('This artwork already contains the same image. Replace the existing copy?')) {
+          savedArtwork = await submitArtwork(true)
+        } else {
+          throw submitError
+        }
       }
+
       if (form.year && Number(savedArtwork.year) !== Number(form.year)) {
         throw new Error('The server did not save the year. Your entry is still here; please try saving again.')
       }
@@ -191,12 +237,12 @@ export default function AdminArtworkForm() {
 
   return (
     <section className="max-w-3xl">
-      <div className="flex items-end justify-between gap-4 border-b border-neutral-200 pb-6">
+      <div className="flex flex-col items-start gap-3 border-b border-neutral-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-500">Admin / Catalogue</p>
           <h1 className="mt-3 font-display text-4xl font-semibold text-ink">{id ? 'Edit artwork' : 'New artwork'}</h1>
         </div>
-        <Link to="/admin/catalogue" className="text-sm text-neutral-500 hover:text-ink">Back to catalogue</Link>
+        <Link to="/admin/catalogue" className="inline-flex min-h-11 items-center text-sm text-neutral-500 hover:text-ink">Back to catalogue</Link>
       </div>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-8">
@@ -211,7 +257,7 @@ export default function AdminArtworkForm() {
               <input required={required} type={field === 'price' || field === 'year' ? 'number' : 'text'} step={field === 'price' ? '0.01' : undefined} min={field === 'price' ? '0' : undefined} value={form[field]} onChange={(event) => update(field, event.target.value)} className="mt-2 block w-full rounded border border-neutral-300 bg-white px-3 py-2" />
             </label>
           ))}
-          <label className="block text-sm text-neutral-700"><span>Status<FieldHelp text={FIELD_HELP.status} /></span><select required value={form.status} onChange={(event) => { const status = event.target.value; update('status', status); update('available', status !== 'sold') }} className="mt-2 block w-full rounded border border-neutral-300 bg-white px-3 py-2"><option value="exhibition">On show/exhibition purpose</option><option value="for_sale">On sale</option><option value="sold">Sold</option></select></label>
+          <label className="block text-sm text-neutral-700"><span>Status<FieldHelp text={FIELD_HELP.status} /></span><select required value={form.status} onChange={(event) => { const status = event.target.value; update('status', status); update('available', status !== 'sold') }} className="mt-2 block w-full rounded border border-neutral-300 bg-white px-3 py-2"><option value="exhibition">On show/exhibition purpose</option><option value="for_sale">For sale</option><option value="sold">Sold</option></select></label>
         </fieldset>
 
         <details className="border-t border-neutral-200 pt-6">
@@ -308,7 +354,7 @@ export default function AdminArtworkForm() {
               ))}
             </div>
           )}
-          {images.length > 0 && <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{images.map((image) => <div key={image.id} className="relative"><img src={image.path.startsWith('http') ? image.path : `${API_URL}${image.path}`} alt="" className="aspect-square w-full rounded object-cover" /><button type="button" onClick={() => deleteImage(image)} className="absolute right-1 top-1 rounded bg-white px-2 py-1 text-xs text-red-600">Delete</button></div>)}</div>}
+          {images.length > 0 && <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{images.map((image) => <div key={image.id} className="relative"><img src={image.path.startsWith('http') ? image.path : `${API_URL}${image.path}`} alt="" className="aspect-square w-full rounded bg-neutral-50 object-contain p-2" /><button type="button" onClick={() => deleteImage(image)} className="absolute right-1 top-1 rounded bg-white px-2 py-1 text-xs text-red-600">Delete</button></div>)}</div>}
         </fieldset>
 
         {error && <p className="text-sm text-red-600" role="alert">{error}</p>}

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { attachTilt } from '../../animations/microInteractions'
 import { useReducedMotion } from '../../hooks/useReducedMotion'
 import { useIsTouchDevice } from '../../hooks/useIsTouchDevice'
@@ -20,14 +20,26 @@ export function artworkPrice(artwork) {
 export function artworkStatusLabel(artwork) {
   if (artwork.status === 'exhibition') return 'On show/exhibition purpose'
   if (artwork.status === 'sold' || artwork.available === false) return 'Sold'
-  return 'On sale'
+  return 'For sale'
+}
+
+export function artworkStatusClass(artwork) {
+  if (artwork.status === 'exhibition') return 'bg-amber-50 text-amber-700'
+  if (artwork.status === 'sold' || artwork.available === false) return 'bg-neutral-100 text-neutral-500'
+  return 'bg-emerald-50 text-emerald-700'
 }
 
 export default function ArtworkCard({ artwork, priority = false, tilt = true, className = '' }) {
   const cardRef = useRef(null)
   const reduced = useReducedMotion()
   const isTouch = useIsTouchDevice()
-  const isSold = artwork.status === 'sold' || artwork.available === false
+  const [portraitImage, setPortraitImage] = useState(artwork.aspect === 'portrait')
+  const frameClass = portraitImage ? 'aspect-[4/5]' : artwork.aspect === 'square' ? 'aspect-square' : 'aspect-[5/4]'
+  const details = [
+    ['Medium', artwork.medium || 'Medium not provided'],
+    ['Size', artwork.dimensions && artwork.dimensions !== 'Dimensions on request' ? artwork.dimensions : 'Size on request'],
+    ['Year', artwork.year || 'Year not provided'],
+  ]
 
   useEffect(() => {
     if (!tilt) return
@@ -39,14 +51,15 @@ export default function ArtworkCard({ artwork, priority = false, tilt = true, cl
       <div
         ref={cardRef}
         style={{ transformStyle: 'preserve-3d' }}
-        className="relative aspect-[5/4] overflow-hidden rounded-2xl bg-neutral-100"
+        className={`relative ${frameClass} overflow-hidden rounded-2xl bg-neutral-100`}
       >
         {artwork.image ? (
           <img
             src={artwork.image}
             alt={artwork.alt}
             loading={priority ? 'eager' : 'lazy'}
-            className={`h-full w-full object-cover transition-[filter,opacity,transform] duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover:scale-[1.06] ${isSold ? 'grayscale-[0.55] opacity-80' : ''}`}
+            onLoad={(event) => setPortraitImage(event.currentTarget.naturalHeight > event.currentTarget.naturalWidth)}
+            className={`h-full w-full ${portraitImage ? 'object-contain bg-neutral-50 p-2' : 'object-cover transition-transform duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover:scale-[1.06]'}`}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-neutral-500">Image not provided</div>
@@ -54,12 +67,19 @@ export default function ArtworkCard({ artwork, priority = false, tilt = true, cl
       </div>
 
       <div className="mt-3">
-        <h3 className="font-display text-base font-medium text-zinc-950">{artwork.title}</h3>
-        <p className="mt-1 text-sm text-zinc-500">{artworkMeta(artwork)}</p>
-        <p className="mt-2 text-sm font-medium text-zinc-700">{artworkStatusLabel(artwork)}</p>
+        <h3 className="font-display text-lg font-semibold text-zinc-950">{artwork.title}</h3>
+        <dl className="mt-2 space-y-1 text-base">
+          {details.map(([label, value]) => (
+            <div key={label} className="grid grid-cols-[4rem_1fr] gap-2">
+              <dt className="text-zinc-500">{label}</dt>
+              <dd className="min-w-0 text-zinc-700">{value}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-3"><span className={`inline-block rounded-full px-3 py-1 text-sm font-medium ${artworkStatusClass(artwork)}`}>{artworkStatusLabel(artwork)}</span></p>
         {artworkStatusLabel(artwork) !== 'Sold' && (
-          <div className="mt-1 flex items-center justify-between gap-3">
-            <p className="text-sm font-medium text-zinc-950">{artworkPrice(artwork)}</p>
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <p className="text-lg font-semibold text-zinc-950">{artworkPrice(artwork)}</p>
             <AddToCartButton artwork={artwork} size="sm" />
           </div>
         )}
